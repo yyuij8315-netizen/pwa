@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PWA Pro | 自动化部署中枢</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+        body {
+            background: #fafafa;
+            background-image: radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.1) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(168, 85, 247, 0.1) 0px, transparent 50%);
+            font-family: 'Inter', system-ui, sans-serif;
+            min-height: 100vh;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 1);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.05);
+        }
+        .input-field {
+            background: rgba(243, 244, 246, 0.5);
+            border: 1px solid rgba(229, 231, 235, 0.8);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .input-field:focus {
+            background: #fff;
+            border-color: #6366f1;
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+            outline: none;
+        }
+        input[type="file"] { display: none; }
+        .loading-ring { border: 2px solid #f3f3f3; border-top: 2px solid #6366f1; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+<link rel="manifest" href="./manifest.json"><script>navigator.serviceWorker.register('./sw.js')</script></head>
+<body class="flex items-center justify-center p-6 min-h-screen">
+
+    <div class="glass-card w-full max-w-5xl rounded-[2.5rem] overflow-hidden flex flex-col md:flex-row">
+        <div class="p-10 md:w-3/5 border-b md:border-b-0 md:border-r border-gray-100 overflow-y-auto" style="max-height: 90vh;">
+            <header class="mb-8">
+                <div class="flex items-center gap-3 mb-2">
+                    <div class="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
+                        <i class="ph ph-rocket-launch text-white text-2xl"></i>
+                    </div>
+                    <h1 class="text-2xl font-semibold tracking-tight text-gray-800">PWA Studio Pro</h1>
+                </div>
+                <p class="text-sm text-gray-400 font-medium tracking-widest uppercase">自动化链路 · 智能识别</p>
+            </header>
+
+            <div class="space-y-6">
+                <div class="p-5 bg-indigo-50/50 rounded-3xl border border-indigo-100/50">
+                    <div class="flex justify-between items-center mb-3">
+                        <label class="text-xs font-bold text-indigo-500 uppercase tracking-widest">Step 1. GitHub 鉴权</label>
+                        <a href="https://github.com/settings/tokens/new" target="_blank" class="text-xs font-semibold text-indigo-600 hover:underline flex items-center gap-1">
+                            <i class="ph ph-key"></i> 一键获取 Token
+                        </a>
+                    </div>
+                    <input type="password" id="gh-token" class="input-field w-full px-4 py-3 rounded-2xl text-sm" placeholder="粘贴 ghp_ 开头的密钥">
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="space-y-2">
+                        <label class="text-xs font-semibold text-gray-400 uppercase tracking-wider">应用名称 (自动同步仓库名)</label>
+                        <input type="text" id="pwa-name" class="input-field w-full px-4 py-3 rounded-2xl text-sm" placeholder="例如：我的接口中心">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-xs font-semibold text-gray-400 uppercase tracking-wider">仓库标识 (URL 后缀)</label>
+                        <input type="text" id="repo-name" class="input-field w-full px-4 py-3 rounded-2xl text-sm font-mono bg-gray-100/50" placeholder="自动生成中..." readonly>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-6">
+                    <label for="html-upload" class="flex flex-col items-center justify-center h-28 border-2 border-dashed border-gray-200 rounded-3xl cursor-pointer hover:bg-white hover:border-indigo-300 transition-all group">
+                        <i class="ph ph-file-html text-2xl text-gray-300 group-hover:text-indigo-500"></i>
+                        <span id="html-status" class="mt-2 text-xs text-gray-400">上传源 HTML</span>
+                        <input type="file" id="html-upload" accept=".html">
+                    </label>
+                    <label for="icon-upload" class="flex flex-col items-center justify-center h-28 border-2 border-dashed border-gray-200 rounded-3xl cursor-pointer hover:bg-white hover:border-indigo-300 transition-all group relative overflow-hidden">
+                        <img id="icon-preview" class="absolute inset-0 w-full h-full object-cover opacity-0 transition-opacity">
+                        <i class="ph ph-image text-2xl text-gray-300 group-hover:text-indigo-500"></i>
+                        <span id="icon-status" class="mt-2 text-xs text-gray-400">上传图标</span>
+                        <input type="file" id="icon-upload" accept="image/*">
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-10 md:w-2/5 flex flex-col justify-between bg-gray-50/50">
+            <div class="space-y-8">
+                <section>
+                    <h3 class="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2 uppercase tracking-widest">
+                        <i class="ph ph-list-checks text-indigo-500 text-lg"></i> 部署状态
+                    </h3>
+                    <div id="log-container" class="space-y-3 font-mono text-[12px]">
+                        <div class="flex items-center gap-3 text-gray-400"><i class="ph ph-circle"></i> 准备就绪</div>
+                    </div>
+                </section>
+
+                <div id="success-link" class="hidden">
+                    <div class="p-4 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-700">
+                        <p class="text-[10px] font-bold uppercase mb-1">部署成功！你的永久链接：</p>
+                        <a id="final-url" href="#" target="_blank" class="text-xs underline break-all font-mono"></a>
+                    </div>
+                </div>
+            </div>
+
+            <button id="btn-deploy" class="w-full py-4 bg-gray-900 hover:bg-black text-white rounded-2xl font-bold tracking-widest transition-all shadow-xl flex items-center justify-center gap-3 group">
+                <i class="ph ph-rocket-launch text-xl"></i> 一键全自动部署
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const pwaNameInput = document.getElementById('pwa-name');
+        const repoNameInput = document.getElementById('repo-name');
+        const htmlInput = document.getElementById('html-upload');
+        const iconInput = document.getElementById('icon-upload');
+        const btnDeploy = document.getElementById('btn-deploy');
+        const logContainer = document.getElementById('log-container');
+
+        // 自动补充逻辑：将中文转为拼音/拼音首字母，英文转为 URL 友好的格式
+        pwaNameInput.addEventListener('input', (e) => {
+            let val = e.target.value;
+            // 简单的正则处理：转小写，去空格，只保留字母数字和横杠
+            let slug = val.toLowerCase()
+                         .replace(/\s+/g, '-')
+                         .replace(/[^\w\-]/g, (char) => {
+                             // 如果是中文，这里简单处理为 'app' 前缀，实际环境建议用库，
+                             // 既然要极简，我们直接把非英文字符过滤掉或转为特定字符
+                             return ''; 
+                         });
+            repoNameInput.value = slug || 'my-nexus-app';
+        });
+
+        let uploadedHtml = "", uploadedIcon = null;
+        htmlInput.onchange = (e) => { 
+            const f = e.target.files[0]; 
+            if(f) { 
+                document.getElementById('html-status').innerText = f.name; 
+                const reader = new FileReader(); reader.onload = ev => uploadedHtml = ev.target.result; reader.readAsText(f);
+            }
+        };
+        iconInput.onchange = (e) => {
+            const f = e.target.files[0];
+            if(f) {
+                uploadedIcon = f;
+                document.getElementById('icon-preview').src = URL.createObjectURL(f);
+                document.getElementById('icon-preview').style.opacity = "1";
+                document.getElementById('icon-status').style.opacity = "0";
+            }
+        };
+
+        function addLog(msg, status = 'loading') {
+            const icons = { loading: '<div class="loading-ring"></div>', done: '<i class="ph ph-check-circle-fill text-green-500"></i>', error: '<i class="ph ph-x-circle-fill text-red-500"></i>' };
+            const div = document.createElement('div');
+            div.className = "flex items-center gap-3 text-gray-500";
+            div.innerHTML = `${icons[status]} ${msg}`;
+            logContainer.appendChild(div);
+            return div;
+        }
+
+        async function processImg(file, size) {
+            return new Promise(res => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = canvas.height = size;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, size, size);
+                    res(canvas.toDataURL('image/png').split(',')[1]);
+                };
+                img.src = URL.createObjectURL(file);
+            });
+        }
+
+        async function ghFetch(url, token, method = 'GET', body = null) {
+            const res = await fetch(`https://api.github.com${url}`, {
+                method, headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' },
+                body: body ? JSON.stringify(body) : null
+            });
+            if(!res.ok && res.status !== 422) throw new Error(await res.text());
+            return res.status === 204 ? {} : res.json();
+        }
+
+        btnDeploy.onclick = async () => {
+            const token = document.getElementById('gh-token').value;
+            const repo = repoNameInput.value;
+            const name = pwaNameInput.value || "My App";
+            if(!token || !repo || !uploadedHtml) return alert("请填写 Token 并上传文件");
+
+            logContainer.innerHTML = "";
+            try {
+                addLog("正在校验权限...");
+                const user = await ghFetch('/user', token);
+                
+                addLog("自动创建云端仓库...");
+                await ghFetch('/user/repos', token, 'POST', { name: repo, auto_init: true });
+
+                addLog("正在优化代码结构...");
+                const i192 = uploadedIcon ? await processImg(uploadedIcon, 192) : "";
+                const manifest = JSON.stringify({ name, short_name: name, start_url: "./index.html", display: "standalone", icons: [{src:"icon-192.png", sizes:"192x192", type:"image/png"}] });
+                const sw = `self.addEventListener('fetch', e => e.respondWith(fetch(e.request)));`;
+                const finalHtml = uploadedHtml.replace('</head>', `<link rel="manifest" href="./manifest.json"><script>navigator.serviceWorker.register('./sw.js')<\/script></head>`);
+
+                addLog("正在同步资源流...");
+                const files = [ { p: 'index.html', c: btoa(unescape(encodeURIComponent(finalHtml))) }, { p: 'manifest.json', c: btoa(manifest) }, { p: 'sw.js', c: btoa(sw) } ];
+                if(i192) files.push({ p: 'icon-192.png', c: i192 });
+
+                for(const f of files) {
+                    await ghFetch(`/repos/${user.login}/${repo}/contents/${f.p}`, token, 'PUT', { message: 'Nexus Auto-Deploy', content: f.c });
+                }
+
+                addLog("正在激活 HTTPS 通道...");
+                await ghFetch(`/repos/${user.login}/${repo}/pages`, token, 'POST', { source: { branch: 'main', path: '/' } });
+
+                const finalUrl = `https://${user.login}.github.io/${repo}/`;
+                addLog("恭喜！全部链路已打通", 'done');
+                document.getElementById('success-link').classList.remove('hidden');
+                document.getElementById('final-url').innerText = finalUrl;
+                document.getElementById('final-url').href = finalUrl;
+
+            } catch (e) {
+                addLog("部署异常: " + e.message, 'error');
+            }
+        };
+    </script>
+</body>
+</html>
